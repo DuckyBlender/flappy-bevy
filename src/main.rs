@@ -84,13 +84,7 @@ fn main() {
         .add_systems((wait_for_start, scroll_floor).in_set(OnUpdate(GameState::Menu)))
         // GAME
         .add_systems(
-            (
-                bird_physics,
-                pipe_physics,
-                scroll_floor,
-                check_collisions,
-                update_score,
-            )
+            (bird_physics, pipe_physics, scroll_floor, check_collisions)
                 .in_set(OnUpdate(GameState::Playing)),
         )
         // GAME OVER
@@ -109,21 +103,6 @@ fn main() {
 
 fn check_state(state: Res<State<GameState>>, scoreboard: Res<Scoreboard>) {
     info!("{:?}: {}.", state.0, scoreboard.score,);
-}
-
-fn update_score(
-    time: Res<Time>,
-    mut timer: ResMut<SpawnTimer>,
-    mut scoreboard: ResMut<Scoreboard>,
-    mut scoreboard_text: Query<&mut Text, With<UI>>,
-) {
-    if timer.0.tick(time.delta()).just_finished() {
-        scoreboard.score += 1;
-        // Update the scoreboard text
-        for mut text in scoreboard_text.iter_mut() {
-            text.sections[0].value = format!("{}", scoreboard.score);
-        }
-    }
 }
 
 fn startup_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
@@ -283,6 +262,8 @@ fn pipe_physics(
     time: Res<Time>,
     mut timer: ResMut<SpawnTimer>,
     mut pipe_query: Query<(Entity, &mut Transform), With<Pipe>>,
+    mut scoreboard: ResMut<Scoreboard>,
+    mut scoreboard_text: Query<&mut Text, With<ScoreboardText>>,
 ) {
     // scroll pipes to the left
     for (entity, mut transform) in pipe_query.iter_mut() {
@@ -293,8 +274,15 @@ fn pipe_physics(
     }
 
     if timer.0.tick(time.delta()).just_finished() {
+        // Increase score
+        scoreboard.score += 1;
+        // Update the scoreboard text
+        for mut text in scoreboard_text.iter_mut() {
+            text.sections[0].value = format!("{}", scoreboard.score);
+        }
+
         let mut rng = rand::thread_rng();
-        let random_height = rng.gen_range(144.0..256.0);
+        let random_height = rng.gen_range(0.0..256. - PIPE_GAP_HEIGHT);
 
         // Spawn top pipe
         commands.spawn((
@@ -341,7 +329,7 @@ fn scroll_floor(mut floor_query: Query<&mut Transform, With<Floor>>, time: Res<T
 #[derive(Resource)]
 struct FlapTimer(Timer);
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>, scoreboard: Res<Scoreboard>) {
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Spawn camera
     commands.spawn(Camera2dBundle::default());
 
