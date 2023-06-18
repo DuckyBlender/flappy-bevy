@@ -20,6 +20,8 @@ cp -R $ASSETS_DIR $BUILD_DIR/$ASSETS_DIR
 cp target/release/$PROJECT_NAME $BUILD_DIR
 
 # Compress the build directory into a zip file in the main directory
-zip -r $PROJECT_NAME.zip $BUILD_DIR/*
+cd $BUILD_DIR
+zip -r ../$PROJECT_NAME.zip *
+cd ..
 
 rm -rf $BUILD_DIR
