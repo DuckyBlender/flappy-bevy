@@ -10,22 +10,30 @@ const SCROLL_SPEED: f32 = 100.;
 const PIPE_SPAWN_INTERVAL: f32 = 2.;
 const PIPE_GAP_HEIGHT: f32 = 125.;
 
-// enum GameState {
-//     Menu,
-//     Playing,
-//     GameOver,
-// }
-
-enum BirdAnimation {
-    Downflap,
-    Midflap,
-    Upflap,
+#[derive(States, Debug, Clone, Eq, PartialEq, Hash, Default)]
+enum GameState {
+    #[default]
+    Menu,
+    Playing,
+    GameOver,
 }
+
+// This resource tracks the game's score
+#[derive(Resource)]
+struct Scoreboard {
+    score: usize,
+}
+
+// enum BirdAnimation {
+//     Downflap,
+//     Midflap,
+//     Upflap,
+// }
 
 #[derive(Component)]
 struct Bird {
     velocity: f32,
-    animation: BirdAnimation,
+    // animation: BirdAnimation,
 }
 
 #[derive(Component)]
@@ -36,6 +44,18 @@ struct Pipe;
 
 #[derive(Component)]
 struct Floor;
+
+#[derive(Component)]
+struct StartGameUI;
+
+#[derive(Component)]
+struct UI;
+
+#[derive(Default)]
+struct ScoreEvent;
+
+#[derive(Resource)]
+struct PointSound(Handle<AudioSource>);
 
 fn main() {
     let window = WindowPlugin {
@@ -50,32 +70,163 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(window))
         .add_startup_system(setup)
-        .add_systems((bird_physics, scroll_floor, handle_pipes))
+        .add_systems((check_state, update_scoreboard))
+        .add_event::<ScoreEvent>()
+        // Timers
         .insert_resource(SpawnTimer(Timer::from_seconds(
             PIPE_SPAWN_INTERVAL,
             TimerMode::Repeating,
         )))
-        .insert_resource(FlapTimer(Timer::from_seconds(0.1, TimerMode::Repeating)))
+        .insert_resource(FlapTimer(Timer::from_seconds(0.1, TimerMode::Repeating))) //todo
+        .insert_resource(Scoreboard { score: 0 })
+        .add_system(bevy::window::close_on_esc)
+        // Game states
+        .add_state::<GameState>()
+        // MENU
+        .add_systems((wait_for_start, scroll_floor).in_set(OnUpdate(GameState::Menu)))
+        // GAME
+        .add_systems(
+            (bird_physics, pipe_physics, scroll_floor, check_collisions)
+                .in_set(OnUpdate(GameState::Playing)),
+        )
+        // GAME OVER
+        .add_systems((wait_for_start,).in_set(OnUpdate(GameState::GameOver)))
+        // WHEN STARTING MENU
+        .add_system(startup_menu.in_schedule(OnEnter(GameState::Menu)))
+        // WHEN STARTING GAME
+        .add_system(startup_game.in_schedule(OnEnter(GameState::Playing)))
+        // WHEN STARTING GAME OVER
+        .add_system(startup_game_over.in_schedule(OnEnter(GameState::GameOver)))
+        // WHEN EXITING MENU OR GAME OVER
+        .add_system(close_menu.in_schedule(OnExit(GameState::Menu)))
+        .add_system(close_menu.in_schedule(OnExit(GameState::GameOver)))
         .run();
+}
+
+fn check_state(state: Res<State<GameState>>) {
+    info!("We are in the {:?} state", state.0);
+}
+
+fn update_scoreboard(
+    mut scoreboard: ResMut<Scoreboard>,
+    mut query: Query<(&mut Text, &UI)>,
+    score_event: Res<Events<ScoreEvent>>,
+    audio: Res<Audio>,
+    sound: Res<PointSound>,
+) {
+    for _ in score_event.get_reader().iter(&score_event) {
+        scoreboard.score += 1;
+    }
+
+    for (mut text, _) in query.iter_mut() {
+        text.sections[0].value = scoreboard.score.to_string();
+    }
+
+    // Play sound
+    if !score_event.is_empty() {
+        audio.play(sound.0.clone());
+    }
+}
+
+fn startup_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
+    // Spawn start screen
+    commands.spawn((
+        SpriteBundle {
+            transform: Transform::from_translation(Vec3::new(0., 0., 10.)),
+            texture: asset_server.load("sprites/message.png"),
+            ..default() // Add a component that describes the UI element
+        },
+        StartGameUI,
+        UI,
+    ));
+}
+
+fn wait_for_start(keyboard_input: Res<Input<KeyCode>>, mut state: ResMut<NextState<GameState>>) {
+    if keyboard_input.just_pressed(KeyCode::Space) {
+        state.set(GameState::Playing);
+    }
+}
+
+fn close_menu(mut commands: Commands, query: Query<Entity, With<UI>>) {
+    for entity in query.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+}
+
+fn startup_game(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    start_menu: Query<Entity, With<StartGameUI>>,
+    pipes_query: Query<Entity, With<Pipe>>,
+    bird_query: Query<Entity, With<Bird>>,
+    mut scoreboard: ResMut<Scoreboard>,
+) {
+    // Close the start menu
+    for entity in start_menu.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+
+    // Remove all pipes and birds from the previous game (if any)
+    for entity in pipes_query.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+    for entity in bird_query.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+
+    // Reset the score
+    scoreboard.score = 0;
+
+    // Spawn bird
+    commands.spawn((
+        SpriteBundle {
+            transform: Transform::from_translation(Vec3::new(-50., 0., 5.)),
+            texture: asset_server.load("sprites/bluebird-downflap.png"),
+            ..default()
+        },
+        Bird { velocity: 0. },
+    ));
+}
+
+fn startup_game_over(mut commands: Commands, asset_server: Res<AssetServer>) {
+    // Spawn game over screen
+    commands.spawn((
+        SpriteBundle {
+            transform: Transform::from_translation(Vec3::new(0., 0., 11.)),
+            texture: asset_server.load("sprites/gameover.png"),
+            ..default()
+        },
+        UI,
+    ));
+    // Everything else is already frozen
+}
+
+fn check_collisions(
+    mut state: ResMut<NextState<GameState>>,
+    mut bird_query: Query<(&mut Bird, &Transform)>,
+    pipe_query: Query<(&Transform, &Pipe)>,
+) {
+    // Check if bird collides with the floor or ceiling
+    for (mut bird, mut transform) in bird_query.iter_mut() {
+        if transform.translation.y > 256. - 12. || transform.translation.y < -256. + 56. + 12. {
+            // 112 is the height of the floor (actually half)
+            // 12 is half the height of the bird
+            state.set(GameState::GameOver);
+        }
+    }
 }
 
 fn bird_physics(
     keyboard_input: Res<Input<KeyCode>>,
     mut bird_query: Query<(&mut Bird, &mut Transform)>,
     // collider_query: Query<&Transform, With<Collider>>,
+    state: Res<State<GameState>>,
     time: Res<Time>,
 ) {
-    // Todo - Add collision detection
-    // For now, just check if bird is touching ground or ceiling
-    for (mut bird, mut transform) in bird_query.iter_mut() {
-        if transform.translation.y > 256. {
-            bird.velocity = 0.;
-            transform.translation.y = 256.;
-        } else if transform.translation.y < -256. {
-            bird.velocity = 0.;
-            transform.translation.y = -256.;
-        }
+    if state.0 != GameState::Playing {
+        return;
     }
+
     // Check if spacebar is pressed
     if keyboard_input.just_pressed(KeyCode::Space) {
         // If so, set bird's velocity to 300
@@ -100,18 +251,23 @@ fn bird_physics(
 #[derive(Resource)]
 struct SpawnTimer(Timer);
 
-fn handle_pipes(
+fn pipe_physics(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     time: Res<Time>,
     mut timer: ResMut<SpawnTimer>,
     mut pipe_query: Query<(Entity, &mut Transform), With<Pipe>>,
+    state: Res<State<GameState>>,
 ) {
+    if state.0 != GameState::Playing {
+        return;
+    }
+
     // scroll pipes to the left
     for (entity, mut transform) in pipe_query.iter_mut() {
         transform.translation.x -= SCROLL_SPEED * time.delta_seconds();
         if transform.translation.x < -200. {
-            commands.entity(entity).despawn();
+            commands.entity(entity).despawn_recursive();
         }
     }
 
@@ -125,7 +281,7 @@ fn handle_pipes(
         commands.spawn((
             SpriteBundle {
                 transform: Transform::from_translation(Vec3::new(
-                    144.,
+                    196.,
                     random_height + PIPE_GAP_HEIGHT,
                     0.,
                 )),
@@ -143,7 +299,7 @@ fn handle_pipes(
         // Spawn bottom pipe with collider component
         commands.spawn((
             SpriteBundle {
-                transform: Transform::from_translation(Vec3::new(144., random_height - 320., 0.)),
+                transform: Transform::from_translation(Vec3::new(196., random_height - 320., 0.)),
                 texture: asset_server.load("sprites/pipe-green.png"),
                 ..default()
             },
@@ -166,7 +322,7 @@ fn scroll_floor(mut floor_query: Query<&mut Transform, With<Floor>>, time: Res<T
 #[derive(Resource)]
 struct FlapTimer(Timer);
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>, scoreboard: Res<Scoreboard>) {
     // Spawn camera
     commands.spawn(Camera2dBundle::default());
 
@@ -197,16 +353,20 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         Floor,
     ));
 
-    // Spawn bird sprite with bird component
+    // Spawn scoreboard
     commands.spawn((
-        SpriteBundle {
-            transform: Transform::from_translation(Vec3::new(-50., 0., 5.)),
-            texture: asset_server.load("sprites/bluebird-midflap.png"),
-            ..default()
-        },
-        Bird {
-            velocity: 0.,
-            animation: BirdAnimation::Midflap,
-        },
+        TextBundle::from_section(
+            scoreboard.score.to_string(),
+            TextStyle {
+                font: asset_server.load("fonts/flappyfont.ttf"),
+                font_size: 50.,
+                color: Color::rgb(0.5, 0.5, 1.),
+            },
+        ),
+        UI,
     ));
+
+    // Setup sound
+    let point_sound = asset_server.load("audio/point.wav");
+    commands.insert_resource(PointSound(point_sound));
 }
