@@ -1,4 +1,5 @@
-#![allow(clippy::too_many_arguments)] // in some functions there are 8 arguments, I don't think it's too much and idk how to reduce it
+#![allow(clippy::too_many_arguments)] // in some functions there are 8 arguments, I don't think it's too much and idk how to reduce it]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // don't open console window in release mode
 
 use bevy::prelude::*;
 use rand::prelude::*;
