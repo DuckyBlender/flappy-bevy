@@ -11,6 +11,8 @@ const SCROLL_SPEED: f32 = 100.;
 const PIPE_SPAWN_INTERVAL: f32 = 2.;
 const PIPE_GAP_HEIGHT: f32 = 125.;
 
+const SCALE: f32 = 1.0;
+
 #[derive(States, Debug, Clone, Eq, PartialEq, Hash, Default)]
 enum GameState {
     #[default]
@@ -35,9 +37,6 @@ struct Bird {
 }
 
 #[derive(Component)]
-struct Collider;
-
-#[derive(Component)]
 struct Pipe;
 
 #[derive(Component)]
@@ -53,15 +52,20 @@ fn main() {
     let window = WindowPlugin {
         primary_window: Some(Window {
             title: "Flappy Bevy".into(),
-            resolution: (288., 512.).into(),
+            resolution: (288. * SCALE, 512. * SCALE).into(),
             resizable: false,
+            mode: bevy::window::WindowMode::Windowed,
             ..default()
         }),
         ..default()
     };
 
     App::new()
-        .add_plugins(DefaultPlugins.set(window))
+        .add_plugins(
+            DefaultPlugins
+                .set(window)
+                .set(ImagePlugin::default_nearest()),
+        )
         .add_startup_system(setup)
         // .add_systems((check_state,)) // Debugging
         .insert_resource(FlapTimer(Timer::from_seconds(0.1, TimerMode::Repeating))) //todo
@@ -109,7 +113,8 @@ fn startup_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Spawn start screen
     commands.spawn((
         SpriteBundle {
-            transform: Transform::from_translation(Vec3::new(0., 0., 10.)),
+            transform: Transform::from_translation(Vec3::new(0., 0., 10.))
+                .with_scale(Vec3::splat(SCALE)),
             texture: asset_server.load("sprites/message.png"),
             ..default() // Add a component that describes the UI element
         },
@@ -181,7 +186,9 @@ fn startup_game(
     // Spawn bird
     commands.spawn((
         SpriteSheetBundle {
-            transform: Transform::from_translation(Vec3::new(-50., 0., 5.)),
+            // scale with SCALE
+            transform: Transform::from_translation(Vec3::new(-50., 0., 5.))
+                .with_scale(Vec3::splat(SCALE)),
             texture_atlas: texture_atlas_handle,
             ..default()
         },
@@ -194,7 +201,7 @@ fn startup_game(
     let font = asset_server.load("fonts/flappyfont.ttf");
     let text_style = TextStyle {
         font,
-        font_size: 60.0,
+        font_size: 60.0 * SCALE,
         color: Color::WHITE,
     };
     let text_alignment = TextAlignment::Center;
@@ -202,7 +209,7 @@ fn startup_game(
     commands.spawn((
         Text2dBundle {
             text: Text::from_section("0", text_style).with_alignment(text_alignment),
-            transform: Transform::from_translation(Vec3::new(0., 200., 20.)),
+            transform: Transform::from_translation(Vec3::new(0., 200. * SCALE, 20.)),
             ..default()
         },
         UI,
@@ -216,7 +223,8 @@ fn startup_game_over(mut commands: Commands, asset_server: Res<AssetServer>, sou
     // Spawn game over screen
     commands.spawn((
         SpriteBundle {
-            transform: Transform::from_translation(Vec3::new(0., 0., 11.)),
+            transform: Transform::from_translation(Vec3::new(0., 0., 11.))
+                .with_scale(Vec3::splat(SCALE)),
             texture: asset_server.load("sprites/gameover.png"),
             ..default()
         },
@@ -231,7 +239,9 @@ fn check_collisions(
 ) {
     // Check if bird collides with the floor or ceiling
     for (_, transform) in bird_query.iter() {
-        if transform.translation.y > 256. - 12. || transform.translation.y < -256. + 56. + 12. {
+        if transform.translation.y > 256. * SCALE - 12. * SCALE
+            || transform.translation.y < -256. * SCALE + 56. * SCALE + 12. * SCALE
+        {
             // 112 is the height of the floor (actually half)
             // 12 is half the height of the bird
             state.set(GameState::GameOver);
@@ -244,9 +254,9 @@ fn check_collisions(
             // Check if bird collides with pipe
             if collide(
                 bird_transform.translation,
-                Vec2::new(17., 12.),
+                Vec2::new(17. * SCALE, 12. * SCALE),
                 pipe_transform.translation,
-                Vec2::new(52., 320.),
+                Vec2::new(52. * SCALE, 320. * SCALE),
             ) {
                 // If so, game over
                 state.set(GameState::GameOver);
@@ -275,22 +285,23 @@ fn bird_physics(
     {
         // If so, set bird's velocity to 300
         for (mut bird, _) in bird_query.iter_mut() {
-            bird.velocity = FLAP_VELOCITY;
+            bird.velocity = FLAP_VELOCITY * SCALE;
         }
         // Play sound
         sound.play(asset_server.load("audio/wing.ogg"));
     } else {
         // Otherwise, apply gravity to bird's velocity
         for (mut bird, _) in bird_query.iter_mut() {
-            bird.velocity -= GRAVITY * time.delta_seconds();
+            bird.velocity -= GRAVITY * SCALE * time.delta_seconds();
         }
     }
 
     // Apply bird's velocity and rotation to transform
     for (bird, mut transform) in bird_query.iter_mut() {
         transform.translation.y += bird.velocity * time.delta_seconds();
-        transform.rotation =
-            Quat::from_rotation_z((bird.velocity / 3000.).clamp(-0.5, 0.5) * std::f32::consts::PI);
+        transform.rotation = Quat::from_rotation_z(
+            (bird.velocity / 3000. / SCALE).clamp(-0.5, 0.5) * std::f32::consts::PI,
+        );
     }
 }
 
@@ -309,8 +320,8 @@ fn pipe_physics(
 ) {
     // scroll pipes to the left
     for (entity, mut transform) in pipe_query.iter_mut() {
-        transform.translation.x -= SCROLL_SPEED * time.delta_seconds();
-        if transform.translation.x < -200. {
+        transform.translation.x -= SCROLL_SPEED * SCALE * time.delta_seconds();
+        if transform.translation.x < -200. * SCALE {
             commands.entity(entity).despawn_recursive();
         }
     }
@@ -333,16 +344,17 @@ fn pipe_physics(
         }
 
         let mut rng = rand::thread_rng();
-        let random_height = rng.gen_range(0.0..256. - PIPE_GAP_HEIGHT);
+        let random_height = rng.gen_range(0.0..256. * SCALE - PIPE_GAP_HEIGHT * SCALE);
 
         // Spawn top pipe
         commands.spawn((
             SpriteBundle {
                 transform: Transform::from_translation(Vec3::new(
-                    180.,
-                    random_height + PIPE_GAP_HEIGHT,
+                    180. * SCALE,
+                    random_height + (PIPE_GAP_HEIGHT * SCALE),
                     0.,
-                )),
+                ))
+                .with_scale(Vec3::splat(SCALE)),
                 texture: asset_server.load("sprites/pipe-green.png"),
                 sprite: Sprite {
                     flip_y: true,
@@ -350,18 +362,21 @@ fn pipe_physics(
                 },
                 ..default()
             },
-            Collider,
             Pipe,
         ));
 
         // Spawn bottom pipe
         commands.spawn((
             SpriteBundle {
-                transform: Transform::from_translation(Vec3::new(180., random_height - 320., 0.)),
+                transform: Transform::from_translation(Vec3::new(
+                    180. * SCALE,
+                    random_height - (320. * SCALE),
+                    0.,
+                ))
+                .with_scale(Vec3::splat(SCALE)),
                 texture: asset_server.load("sprites/pipe-green.png"),
                 ..default()
             },
-            Collider,
             Pipe,
         ));
     }
@@ -370,9 +385,9 @@ fn pipe_physics(
 fn scroll_floor(mut floor_query: Query<&mut Transform, With<Floor>>, time: Res<Time>) {
     // Scroll floor to the left
     for mut transform in floor_query.iter_mut() {
-        transform.translation.x -= SCROLL_SPEED * time.delta_seconds();
-        if transform.translation.x < -144. {
-            transform.translation.x = 144.;
+        transform.translation.x -= SCROLL_SPEED * SCALE * time.delta_seconds();
+        if transform.translation.x < -144. * SCALE {
+            transform.translation.x = 144. * SCALE;
         }
     }
 }
@@ -416,28 +431,26 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     // Spawn background sprite
     commands.spawn(SpriteBundle {
-        transform: Transform::from_translation(Vec3::new(0., 0., 0.)),
+        transform: Transform::from_translation(Vec3::new(0., 0., 0.))
+            .with_scale(Vec3::splat(SCALE)),
         texture: asset_server.load("sprites/background-day.png"),
         ..default()
     });
 
-    // Spawn two ground sprites with collider component
-    commands.spawn((
-        SpriteBundle {
-            transform: Transform::from_translation(Vec3::new(0., -256., 1.)),
-            texture: asset_server.load("sprites/base.png"),
-            ..default()
-        },
-        Collider,
-        Floor,
-    ));
-    commands.spawn((
-        SpriteBundle {
-            transform: Transform::from_translation(Vec3::new(144., -256., 1.)),
-            texture: asset_server.load("sprites/base.png"),
-            ..default()
-        },
-        Collider,
-        Floor,
-    ));
+    // Spawn scale amount of ground sprites + 1 with collider component
+    for i in 0..=SCALE as usize {
+        commands.spawn((
+            SpriteBundle {
+                transform: Transform::from_translation(Vec3::new(
+                    (i * 144) as f32 * SCALE,
+                    -256. * SCALE,
+                    1.,
+                ))
+                .with_scale(Vec3::splat(SCALE)),
+                texture: asset_server.load("sprites/base.png"),
+                ..default()
+            },
+            Floor,
+        ));
+    }
 }
