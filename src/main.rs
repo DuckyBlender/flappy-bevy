@@ -7,11 +7,12 @@ use rand::prelude::*;
 const GRAVITY: f32 = 1000.;
 const FLAP_VELOCITY: f32 = 400.;
 
-const SCROLL_SPEED: f32 = 100.;
+const PIPE_SCROLL_SPEED: f32 = 100.;
+const BG_SCROLL_SPEED: f32 = 20.;
 const PIPE_SPAWN_INTERVAL: f32 = 2.;
 const PIPE_GAP_HEIGHT: f32 = 125.;
 
-const SCALE: f32 = 1.0;
+const SCALE: f32 = 3.0;
 
 #[derive(States, Debug, Clone, Eq, PartialEq, Hash, Default)]
 enum GameState {
@@ -47,6 +48,9 @@ struct StartGameUI;
 
 #[derive(Component)]
 struct UI;
+
+#[derive(Component)]
+struct Background;
 
 fn main() {
     let window = WindowPlugin {
@@ -87,6 +91,7 @@ fn main() {
                 scroll_floor,
                 check_collisions,
                 animate_bird,
+                scroll_background,
             )
                 .in_set(OnUpdate(GameState::Playing)),
         )
@@ -320,7 +325,7 @@ fn pipe_physics(
 ) {
     // scroll pipes to the left
     for (entity, mut transform) in pipe_query.iter_mut() {
-        transform.translation.x -= SCROLL_SPEED * SCALE * time.delta_seconds();
+        transform.translation.x -= PIPE_SCROLL_SPEED * SCALE * time.delta_seconds();
         if transform.translation.x < -200. * SCALE {
             commands.entity(entity).despawn_recursive();
         }
@@ -385,9 +390,20 @@ fn pipe_physics(
 fn scroll_floor(mut floor_query: Query<&mut Transform, With<Floor>>, time: Res<Time>) {
     // Scroll floor to the left
     for mut transform in floor_query.iter_mut() {
-        transform.translation.x -= SCROLL_SPEED * SCALE * time.delta_seconds();
+        transform.translation.x -= PIPE_SCROLL_SPEED * SCALE * time.delta_seconds();
         if transform.translation.x < -144. * SCALE {
             transform.translation.x = 144. * SCALE;
+        }
+    }
+}
+
+fn scroll_background(mut bg_query: Query<&mut Transform, With<Background>>, time: Res<Time>) {
+    // Scroll floor to the left
+    for mut transform in bg_query.iter_mut() {
+        transform.translation.x -= BG_SCROLL_SPEED * SCALE * time.delta_seconds();
+        // bg is 288 pixels wide
+        if transform.translation.x < -288. * SCALE {
+            transform.translation.x = 288. * SCALE;
         }
     }
 }
@@ -429,13 +445,16 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Spawn camera
     commands.spawn(Camera2dBundle::default());
 
-    // Spawn background sprite
-    commands.spawn(SpriteBundle {
-        transform: Transform::from_translation(Vec3::new(0., 0., 0.))
-            .with_scale(Vec3::splat(SCALE)),
-        texture: asset_server.load("sprites/background-day.png"),
-        ..default()
-    });
+    // Spawn 2 background sprites
+    commands.spawn((
+        SpriteBundle {
+            transform: Transform::from_translation(Vec3::new(0., 0., 0.))
+                .with_scale(Vec3::splat(SCALE)),
+            texture: asset_server.load("sprites/background-day.png"),
+            ..default()
+        },
+        Background,
+    ));
 
     // Spawn scale amount of ground sprites + 1 with collider component
     for i in 0..=SCALE as usize {
@@ -451,6 +470,28 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
                 ..default()
             },
             Floor,
+        ));
+    }
+
+    // commands.spawn((
+    //     SpriteBundle {
+    //         transform: Transform::from_translation(Vec3::new(144. * SCALE, 0., 0.))
+    //             .with_scale(Vec3::splat(SCALE)),
+    //         texture: asset_server.load("sprites/background-day.png"),
+    //         ..default()
+    //     },
+    //     Background,
+    // ));
+    // Spawn scale amount of background + 1 with background component
+    for i in 0..=SCALE as usize {
+        commands.spawn((
+            SpriteBundle {
+                transform: Transform::from_translation(Vec3::new((i * 288) as f32 * SCALE, 0., 0.))
+                    .with_scale(Vec3::splat(SCALE)),
+                texture: asset_server.load("sprites/background-day.png"),
+                ..default()
+            },
+            Background,
         ));
     }
 }
