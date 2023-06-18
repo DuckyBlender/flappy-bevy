@@ -1,4 +1,4 @@
-// FLAPPY BIRD IN RUST
+#![allow(clippy::too_many_arguments)] // in some functions there are 8 arguments, I don't think it's too much and idk how to reduce it
 
 use bevy::prelude::*;
 use rand::prelude::*;
@@ -9,13 +9,6 @@ const FLAP_VELOCITY: f32 = 400.;
 const SCROLL_SPEED: f32 = 100.;
 const PIPE_SPAWN_INTERVAL: f32 = 2.;
 const PIPE_GAP_HEIGHT: f32 = 125.;
-const BIRD_COLOR: BirdColors = BirdColors::Blue;
-
-enum BirdColors {
-    Red,
-    Blue,
-    Yellow,
-}
 
 #[derive(States, Debug, Clone, Eq, PartialEq, Hash, Default)]
 enum GameState {
