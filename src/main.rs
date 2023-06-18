@@ -54,14 +54,12 @@ struct StartGameUI;
 #[derive(Component)]
 struct UI;
 
-#[derive(Resource)]
-struct PointSound(Handle<AudioSource>);
-
 fn main() {
     let window = WindowPlugin {
         primary_window: Some(Window {
             title: "Flappy Bevy".into(),
             resolution: (288., 512.).into(),
+            resizable: false,
             ..default()
         }),
         ..default()
@@ -195,7 +193,9 @@ fn startup_game(
     ));
 }
 
-fn startup_game_over(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn startup_game_over(mut commands: Commands, asset_server: Res<AssetServer>, sound: Res<Audio>) {
+    // Play the hit sound
+    sound.play(asset_server.load("audio/hit.ogg"));
     // Spawn game over screen
     commands.spawn((
         SpriteBundle {
@@ -249,6 +249,8 @@ fn bird_physics(
     mouse_button_input: Res<Input<MouseButton>>,
     mut bird_query: Query<(&mut Bird, &mut Transform)>,
     time: Res<Time>,
+    sound: Res<Audio>,
+    asset_server: Res<AssetServer>,
 ) {
     // Check if spacebar or mouse is pressed
     if keyboard_input.just_pressed(KeyCode::Space)
@@ -258,6 +260,8 @@ fn bird_physics(
         for (mut bird, _) in bird_query.iter_mut() {
             bird.velocity = FLAP_VELOCITY;
         }
+        // Play sound
+        sound.play(asset_server.load("audio/wing.ogg"));
     } else {
         // Otherwise, apply gravity to bird's velocity
         for (mut bird, _) in bird_query.iter_mut() {
@@ -284,6 +288,7 @@ fn pipe_physics(
     mut pipe_query: Query<(Entity, &mut Transform), With<Pipe>>,
     mut scoreboard: ResMut<Scoreboard>,
     mut scoreboard_text: Query<&mut Text, With<ScoreboardText>>,
+    audio: Res<Audio>,
 ) {
     // scroll pipes to the left
     for (entity, mut transform) in pipe_query.iter_mut() {
@@ -296,6 +301,10 @@ fn pipe_physics(
     if timer.0.tick(time.delta()).just_finished() {
         // Increase score
         scoreboard.score += 1;
+        // Play sound if score is positive
+        if scoreboard.score > 0 {
+            audio.play(asset_server.load("audio/point.ogg"));
+        }
         // Update the scoreboard text
         for mut text in scoreboard_text.iter_mut() {
             let score = if scoreboard.score < 0 {
@@ -384,8 +393,4 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         Collider,
         Floor,
     ));
-
-    // Setup sound
-    let point_sound = asset_server.load("audio/point.wav");
-    commands.insert_resource(PointSound(point_sound));
 }
