@@ -24,6 +24,9 @@ struct Scoreboard {
     score: usize,
 }
 
+#[derive(Component)]
+struct ScoreboardText;
+
 // enum BirdAnimation {
 //     Downflap,
 //     Midflap,
@@ -51,9 +54,6 @@ struct StartGameUI;
 #[derive(Component)]
 struct UI;
 
-#[derive(Default)]
-struct ScoreEvent;
-
 #[derive(Resource)]
 struct PointSound(Handle<AudioSource>);
 
@@ -70,14 +70,12 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(window))
         .add_startup_system(setup)
-        .add_systems((check_state, update_scoreboard))
-        .add_event::<ScoreEvent>()
-        // Timers
+        .add_systems((check_state,))
+        .insert_resource(FlapTimer(Timer::from_seconds(0.1, TimerMode::Repeating))) //todo
         .insert_resource(SpawnTimer(Timer::from_seconds(
             PIPE_SPAWN_INTERVAL,
             TimerMode::Repeating,
         )))
-        .insert_resource(FlapTimer(Timer::from_seconds(0.1, TimerMode::Repeating))) //todo
         .insert_resource(Scoreboard { score: 0 })
         .add_system(bevy::window::close_on_esc)
         // Game states
@@ -86,7 +84,13 @@ fn main() {
         .add_systems((wait_for_start, scroll_floor).in_set(OnUpdate(GameState::Menu)))
         // GAME
         .add_systems(
-            (bird_physics, pipe_physics, scroll_floor, check_collisions)
+            (
+                bird_physics,
+                pipe_physics,
+                scroll_floor,
+                check_collisions,
+                update_score,
+            )
                 .in_set(OnUpdate(GameState::Playing)),
         )
         // GAME OVER
@@ -103,28 +107,22 @@ fn main() {
         .run();
 }
 
-fn check_state(state: Res<State<GameState>>) {
-    info!("We are in the {:?} state", state.0);
+fn check_state(state: Res<State<GameState>>, scoreboard: Res<Scoreboard>) {
+    info!("{:?}: {}.", state.0, scoreboard.score,);
 }
 
-fn update_scoreboard(
+fn update_score(
+    time: Res<Time>,
+    mut timer: ResMut<SpawnTimer>,
     mut scoreboard: ResMut<Scoreboard>,
-    mut query: Query<(&mut Text, &UI)>,
-    score_event: Res<Events<ScoreEvent>>,
-    audio: Res<Audio>,
-    sound: Res<PointSound>,
+    mut scoreboard_text: Query<&mut Text, With<UI>>,
 ) {
-    for _ in score_event.get_reader().iter(&score_event) {
+    if timer.0.tick(time.delta()).just_finished() {
         scoreboard.score += 1;
-    }
-
-    for (mut text, _) in query.iter_mut() {
-        text.sections[0].value = scoreboard.score.to_string();
-    }
-
-    // Play sound
-    if !score_event.is_empty() {
-        audio.play(sound.0.clone());
+        // Update the scoreboard text
+        for mut text in scoreboard_text.iter_mut() {
+            text.sections[0].value = format!("{}", scoreboard.score);
+        }
     }
 }
 
@@ -141,8 +139,14 @@ fn startup_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
     ));
 }
 
-fn wait_for_start(keyboard_input: Res<Input<KeyCode>>, mut state: ResMut<NextState<GameState>>) {
-    if keyboard_input.just_pressed(KeyCode::Space) {
+fn wait_for_start(
+    keyboard_input: Res<Input<KeyCode>>,
+    mouse_button_input: Res<Input<MouseButton>>,
+    mut state: ResMut<NextState<GameState>>,
+) {
+    if keyboard_input.just_pressed(KeyCode::Space)
+        || mouse_button_input.just_pressed(MouseButton::Left)
+    {
         state.set(GameState::Playing);
     }
 }
@@ -159,6 +163,7 @@ fn startup_game(
     start_menu: Query<Entity, With<StartGameUI>>,
     pipes_query: Query<Entity, With<Pipe>>,
     bird_query: Query<Entity, With<Bird>>,
+    scoreboard_query: Query<Entity, With<ScoreboardText>>,
     mut scoreboard: ResMut<Scoreboard>,
 ) {
     // Close the start menu
@@ -171,6 +176,9 @@ fn startup_game(
         commands.entity(entity).despawn_recursive();
     }
     for entity in bird_query.iter() {
+        commands.entity(entity).despawn_recursive();
+    }
+    for entity in scoreboard_query.iter() {
         commands.entity(entity).despawn_recursive();
     }
 
@@ -186,6 +194,26 @@ fn startup_game(
         },
         Bird { velocity: 0. },
     ));
+
+    // Spawn the scoreboard text
+    let font = asset_server.load("fonts/flappyfont.ttf");
+    let text_style = TextStyle {
+        font,
+        font_size: 60.0,
+        color: Color::WHITE,
+    };
+    let text_alignment = TextAlignment::Center;
+
+    commands.spawn((
+        Text2dBundle {
+            text: Text::from_section(scoreboard.score.to_string(), text_style)
+                .with_alignment(text_alignment),
+            transform: Transform::from_translation(Vec3::new(0., 200., 20.)),
+            ..default()
+        },
+        UI,
+        ScoreboardText,
+    ));
 }
 
 fn startup_game_over(mut commands: Commands, asset_server: Res<AssetServer>) {
@@ -198,37 +226,35 @@ fn startup_game_over(mut commands: Commands, asset_server: Res<AssetServer>) {
         },
         UI,
     ));
-    // Everything else is already frozen
 }
 
 fn check_collisions(
     mut state: ResMut<NextState<GameState>>,
-    mut bird_query: Query<(&mut Bird, &Transform)>,
-    pipe_query: Query<(&Transform, &Pipe)>,
+    bird_query: Query<(&mut Bird, &Transform)>,
+    // pipe_query: Query<(Entity, &Transform), With<Pipe>>,
 ) {
     // Check if bird collides with the floor or ceiling
-    for (mut bird, mut transform) in bird_query.iter_mut() {
+    for (_, transform) in bird_query.iter() {
         if transform.translation.y > 256. - 12. || transform.translation.y < -256. + 56. + 12. {
             // 112 is the height of the floor (actually half)
             // 12 is half the height of the bird
             state.set(GameState::GameOver);
         }
     }
+
+    // TODO: Pipe collisions
 }
 
 fn bird_physics(
     keyboard_input: Res<Input<KeyCode>>,
+    mouse_button_input: Res<Input<MouseButton>>,
     mut bird_query: Query<(&mut Bird, &mut Transform)>,
-    // collider_query: Query<&Transform, With<Collider>>,
-    state: Res<State<GameState>>,
     time: Res<Time>,
 ) {
-    if state.0 != GameState::Playing {
-        return;
-    }
-
-    // Check if spacebar is pressed
-    if keyboard_input.just_pressed(KeyCode::Space) {
+    // Check if spacebar or mouse is pressed
+    if keyboard_input.just_pressed(KeyCode::Space)
+        || mouse_button_input.just_pressed(MouseButton::Left)
+    {
         // If so, set bird's velocity to 300
         for (mut bird, _) in bird_query.iter_mut() {
             bird.velocity = FLAP_VELOCITY;
@@ -257,12 +283,7 @@ fn pipe_physics(
     time: Res<Time>,
     mut timer: ResMut<SpawnTimer>,
     mut pipe_query: Query<(Entity, &mut Transform), With<Pipe>>,
-    state: Res<State<GameState>>,
 ) {
-    if state.0 != GameState::Playing {
-        return;
-    }
-
     // scroll pipes to the left
     for (entity, mut transform) in pipe_query.iter_mut() {
         transform.translation.x -= SCROLL_SPEED * time.delta_seconds();
@@ -271,13 +292,11 @@ fn pipe_physics(
         }
     }
 
-    // update our timer with the time elapsed since the last update
-    // if that caused the timer to finish, we say hello to everyone
     if timer.0.tick(time.delta()).just_finished() {
         let mut rng = rand::thread_rng();
         let random_height = rng.gen_range(144.0..256.0);
 
-        // Spawn top pipe with collider component
+        // Spawn top pipe
         commands.spawn((
             SpriteBundle {
                 transform: Transform::from_translation(Vec3::new(
@@ -296,7 +315,7 @@ fn pipe_physics(
             Pipe,
         ));
 
-        // Spawn bottom pipe with collider component
+        // Spawn bottom pipe
         commands.spawn((
             SpriteBundle {
                 transform: Transform::from_translation(Vec3::new(196., random_height - 320., 0.)),
@@ -351,19 +370,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, scoreboard: Res
         },
         Collider,
         Floor,
-    ));
-
-    // Spawn scoreboard
-    commands.spawn((
-        TextBundle::from_section(
-            scoreboard.score.to_string(),
-            TextStyle {
-                font: asset_server.load("fonts/flappyfont.ttf"),
-                font_size: 50.,
-                color: Color::rgb(0.5, 0.5, 1.),
-            },
-        ),
-        UI,
     ));
 
     // Setup sound
