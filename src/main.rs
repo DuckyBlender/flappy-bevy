@@ -9,6 +9,13 @@ const FLAP_VELOCITY: f32 = 400.;
 const SCROLL_SPEED: f32 = 100.;
 const PIPE_SPAWN_INTERVAL: f32 = 2.;
 const PIPE_GAP_HEIGHT: f32 = 125.;
+const BIRD_COLOR: BirdColors = BirdColors::Blue;
+
+enum BirdColors {
+    Red,
+    Blue,
+    Yellow,
+}
 
 #[derive(States, Debug, Clone, Eq, PartialEq, Hash, Default)]
 enum GameState {
@@ -26,12 +33,6 @@ struct Scoreboard {
 
 #[derive(Component)]
 struct ScoreboardText;
-
-// enum BirdAnimation {
-//     Downflap,
-//     Midflap,
-//     Upflap,
-// }
 
 #[derive(Component)]
 struct Bird {
@@ -82,7 +83,13 @@ fn main() {
         .add_systems((wait_for_start, scroll_floor).in_set(OnUpdate(GameState::Menu)))
         // GAME
         .add_systems(
-            (bird_physics, pipe_physics, scroll_floor, check_collisions)
+            (
+                bird_physics,
+                pipe_physics,
+                scroll_floor,
+                check_collisions,
+                animate_bird,
+            )
                 .in_set(OnUpdate(GameState::Playing)),
         )
         // GAME OVER
@@ -143,6 +150,7 @@ fn startup_game(
     bird_query: Query<Entity, With<Bird>>,
     scoreboard_query: Query<Entity, With<ScoreboardText>>,
     mut scoreboard: ResMut<Scoreboard>,
+    mut texture_atlases: ResMut<Assets<TextureAtlas>>,
 ) {
     // Close the start menu
     for entity in start_menu.iter() {
@@ -163,13 +171,28 @@ fn startup_game(
     // Reset the score (-1 because no pipe is in the beginning)
     scoreboard.score = -1;
 
+    // Setup texture atlas for bird animation
+    let texture_name = match rand::thread_rng().gen_range(0..=2) {
+        0 => "sprites/red.png",
+        1 => "sprites/blue.png",
+        2 => "sprites/yellow.png",
+        _ => unreachable!(),
+    };
+    let texture_handle = asset_server.load(texture_name);
+    let texture_atlas =
+        TextureAtlas::from_grid(texture_handle, Vec2::new(34., 24.), 4, 1, None, None);
+    let texture_atlas_handle = texture_atlases.add(texture_atlas);
+    let animation_indices = AnimationIndices { first: 0, last: 3 };
+
     // Spawn bird
     commands.spawn((
-        SpriteBundle {
+        SpriteSheetBundle {
             transform: Transform::from_translation(Vec3::new(-50., 0., 5.)),
-            texture: asset_server.load("sprites/bluebird-downflap.png"),
+            texture_atlas: texture_atlas_handle,
             ..default()
         },
+        animation_indices,
+        AnimationTimer(Timer::from_seconds(0.3, TimerMode::Repeating)),
         Bird { velocity: 0. },
     ));
 
@@ -312,7 +335,7 @@ fn pipe_physics(
             } else {
                 scoreboard.score
             };
-            text.sections[0].value = format!("{}", score);
+            text.sections[0].value = format!("{score}");
         }
 
         let mut rng = rand::thread_rng();
@@ -362,6 +385,36 @@ fn scroll_floor(mut floor_query: Query<&mut Transform, With<Floor>>, time: Res<T
 
 #[derive(Resource)]
 struct FlapTimer(Timer);
+
+#[derive(Component)]
+struct AnimationIndices {
+    first: usize,
+    last: usize,
+}
+
+#[derive(Component, Deref, DerefMut)]
+struct AnimationTimer(Timer);
+
+fn animate_bird(
+    time: Res<Time>,
+    mut query: Query<(
+        &AnimationIndices,
+        &mut AnimationTimer,
+        &mut TextureAtlasSprite,
+    )>,
+) {
+    for (indices, mut timer, mut sprite) in &mut query {
+        timer.tick(time.delta());
+        if timer.just_finished() {
+            // Loop through the textures in the animation
+            if sprite.index < indices.last {
+                sprite.index += 1;
+            } else {
+                sprite.index = indices.first;
+            }
+        }
+    }
+}
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Spawn camera

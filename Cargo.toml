@@ -2,6 +2,11 @@
 name = "flappy-bevy"
 version = "0.1.0"
 edition = "2021"
+authors = ["Alan <42645784+DuckyBlender@users.noreply.github.com>"]
+description = "Flappy Bird clone in Rust using Bevy"
+readme = "README.md"
+repository = "https://github.com/DuckyBlender/flappy-bevy"
+
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -16,6 +21,6 @@ resolver = "2" # Important! wgpu/Bevy needs this!
 [profile.dev]
 opt-level = 1
 
-# Enable high optimizations for dependencies (incl. Bevy), but not for our code:
+# Enable high optimizations for dependencies (incl. Bevy), but not for our code. This will make first compilation slower, but the program will run faster.
 [profile.dev.package."*"]
 opt-level = 3
