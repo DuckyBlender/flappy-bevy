@@ -21,7 +21,7 @@ enum GameState {
 // This resource tracks the game's score
 #[derive(Resource)]
 struct Scoreboard {
-    score: usize,
+    score: isize,
 }
 
 #[derive(Component)]
@@ -70,13 +70,13 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(window))
         .add_startup_system(setup)
-        .add_systems((check_state,))
+        // .add_systems((check_state,)) // Debugging
         .insert_resource(FlapTimer(Timer::from_seconds(0.1, TimerMode::Repeating))) //todo
         .insert_resource(SpawnTimer(Timer::from_seconds(
             PIPE_SPAWN_INTERVAL,
             TimerMode::Repeating,
         )))
-        .insert_resource(Scoreboard { score: 0 })
+        .insert_resource(Scoreboard { score: -1 })
         .add_system(bevy::window::close_on_esc)
         // Game states
         .add_state::<GameState>()
@@ -101,9 +101,10 @@ fn main() {
         .run();
 }
 
-fn check_state(state: Res<State<GameState>>, scoreboard: Res<Scoreboard>) {
-    info!("{:?}: {}.", state.0, scoreboard.score,);
-}
+// Debugging function
+// fn check_state(state: Res<State<GameState>>, scoreboard: Res<Scoreboard>) {
+//     info!("{:?}: {}.", state.0, scoreboard.score,);
+// }
 
 fn startup_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Spawn start screen
@@ -161,8 +162,8 @@ fn startup_game(
         commands.entity(entity).despawn_recursive();
     }
 
-    // Reset the score
-    scoreboard.score = 0;
+    // Reset the score (-1 because no pipe is in the beginning)
+    scoreboard.score = -1;
 
     // Spawn bird
     commands.spawn((
@@ -185,8 +186,7 @@ fn startup_game(
 
     commands.spawn((
         Text2dBundle {
-            text: Text::from_section(scoreboard.score.to_string(), text_style)
-                .with_alignment(text_alignment),
+            text: Text::from_section("0", text_style).with_alignment(text_alignment),
             transform: Transform::from_translation(Vec3::new(0., 200., 20.)),
             ..default()
         },
@@ -210,7 +210,7 @@ fn startup_game_over(mut commands: Commands, asset_server: Res<AssetServer>) {
 fn check_collisions(
     mut state: ResMut<NextState<GameState>>,
     bird_query: Query<(&mut Bird, &Transform)>,
-    // pipe_query: Query<(Entity, &Transform), With<Pipe>>,
+    pipe_query: Query<(Entity, &Transform), With<Pipe>>,
 ) {
     // Check if bird collides with the floor or ceiling
     for (_, transform) in bird_query.iter() {
@@ -221,7 +221,27 @@ fn check_collisions(
         }
     }
 
-    // TODO: Pipe collisions
+    // Pipe collision
+    for (_, pipe_transform) in pipe_query.iter() {
+        for (_, bird_transform) in bird_query.iter() {
+            // Check if bird collides with pipe
+            if collide(
+                bird_transform.translation,
+                Vec2::new(17., 12.),
+                pipe_transform.translation,
+                Vec2::new(52., 320.),
+            ) {
+                // If so, game over
+                state.set(GameState::GameOver);
+            }
+        }
+    }
+}
+
+fn collide(pos1: Vec3, size1: Vec2, pos2: Vec3, size2: Vec2) -> bool {
+    let x_overlap = (pos1.x - pos2.x).abs() < (size1.x + size2.x) / 2.;
+    let y_overlap = (pos1.y - pos2.y).abs() < (size1.y + size2.y) / 2.;
+    x_overlap && y_overlap
 }
 
 fn bird_physics(
@@ -278,7 +298,12 @@ fn pipe_physics(
         scoreboard.score += 1;
         // Update the scoreboard text
         for mut text in scoreboard_text.iter_mut() {
-            text.sections[0].value = format!("{}", scoreboard.score);
+            let score = if scoreboard.score < 0 {
+                0
+            } else {
+                scoreboard.score
+            };
+            text.sections[0].value = format!("{}", score);
         }
 
         let mut rng = rand::thread_rng();
@@ -288,7 +313,7 @@ fn pipe_physics(
         commands.spawn((
             SpriteBundle {
                 transform: Transform::from_translation(Vec3::new(
-                    196.,
+                    180.,
                     random_height + PIPE_GAP_HEIGHT,
                     0.,
                 )),
@@ -306,7 +331,7 @@ fn pipe_physics(
         // Spawn bottom pipe
         commands.spawn((
             SpriteBundle {
-                transform: Transform::from_translation(Vec3::new(196., random_height - 320., 0.)),
+                transform: Transform::from_translation(Vec3::new(180., random_height - 320., 0.)),
                 texture: asset_server.load("sprites/pipe-green.png"),
                 ..default()
             },
