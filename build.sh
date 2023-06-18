@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# BUILD SCRIPT FOR RUST BEVY PROGRAM
+# THE POINT OF THIS SCRIPT IS TO MAKE IT EASY TO COMPILE AND COPY THE ASSETS FOLDER AND ZIP IT AUTOMATICALLY
+# THIS SCRIPT IS NOT REQUIRED TO BUILD THE PROGRAM, IT IS JUST A CONVENIENCE SCRIPT
+# UNTESTED 
+
+PROJECT_NAME="flappy-bevy"
+BUILD_DIR="build"
+ASSETS_DIR="assets"
+ZIP_FILE="$BUILD_DIR/$PROJECT_NAME.zip"
+
+mkdir -p $BUILD_DIR
+
+cargo build --release
+
+cp -r $ASSETS_DIR $BUILD_DIR
+
+cp target/release/$PROJECT_NAME $BUILD_DIR
+
+# Compress the build directory into a zip file in the main directory
+zip -r $ZIP_FILE $BUILD_DIR/*
+
+rm -rf $BUILD_DIR

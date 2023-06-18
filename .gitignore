@@ -15,5 +15,8 @@ Cargo.lock
 
 
 # Added by cargo
-
 /target
+
+# Build folder made by the build.bat script
+/build
+flappy-bevy.zip
