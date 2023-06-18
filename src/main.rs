@@ -1,12 +1,20 @@
 // FLAPPY BIRD IN RUST
 
 use bevy::prelude::*;
+use rand::prelude::*;
 
-enum GameState {
-    Menu,
-    Playing,
-    GameOver,
-}
+const GRAVITY: f32 = 1000.;
+const FLAP_VELOCITY: f32 = 400.;
+
+const SCROLL_SPEED: f32 = 100.;
+const PIPE_SPAWN_INTERVAL: f32 = 2.;
+const PIPE_GAP_HEIGHT: f32 = 125.;
+
+// enum GameState {
+//     Menu,
+//     Playing,
+//     GameOver,
+// }
 
 enum BirdAnimation {
     Downflap,
@@ -42,7 +50,12 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(window))
         .add_startup_system(setup)
-        .add_systems((bird_physics, scroll_colliders, spawn_pipe))
+        .add_systems((bird_physics, scroll_floor, handle_pipes))
+        .insert_resource(SpawnTimer(Timer::from_seconds(
+            PIPE_SPAWN_INTERVAL,
+            TimerMode::Repeating,
+        )))
+        .insert_resource(FlapTimer(Timer::from_seconds(0.1, TimerMode::Repeating)))
         .run();
 }
 
@@ -67,12 +80,12 @@ fn bird_physics(
     if keyboard_input.just_pressed(KeyCode::Space) {
         // If so, set bird's velocity to 300
         for (mut bird, _) in bird_query.iter_mut() {
-            bird.velocity = 300.;
+            bird.velocity = FLAP_VELOCITY;
         }
     } else {
         // Otherwise, apply gravity to bird's velocity
         for (mut bird, _) in bird_query.iter_mut() {
-            bird.velocity -= 300. * time.delta_seconds();
+            bird.velocity -= GRAVITY * time.delta_seconds();
         }
     }
 
@@ -84,44 +97,74 @@ fn bird_physics(
     }
 }
 
-fn spawn_pipe(mut commands: Commands, asset_server: Res<AssetServer>) {
-    // Spawn top pipe with collider component
-    commands.spawn((
-        SpriteBundle {
-            transform: Transform::from_translation(Vec3::new(144., 0., 2.)),
-            texture: asset_server.load("sprites/pipe-green.png"),
-            ..default()
-        },
-        Collider,
-        Pipe,
-    ));
+#[derive(Resource)]
+struct SpawnTimer(Timer);
 
-    // Spawn bottom pipe with collider component
-    commands.spawn((
-        SpriteBundle {
-            transform: Transform::from_translation(Vec3::new(144., -320., 2.)),
-            texture: asset_server.load("sprites/pipe-green.png"),
-            ..default()
-        },
-        Collider,
-        Pipe,
-    ));
+fn handle_pipes(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    time: Res<Time>,
+    mut timer: ResMut<SpawnTimer>,
+    mut pipe_query: Query<(Entity, &mut Transform), With<Pipe>>,
+) {
+    // scroll pipes to the left
+    for (entity, mut transform) in pipe_query.iter_mut() {
+        transform.translation.x -= SCROLL_SPEED * time.delta_seconds();
+        if transform.translation.x < -200. {
+            commands.entity(entity).despawn();
+        }
+    }
+
+    // update our timer with the time elapsed since the last update
+    // if that caused the timer to finish, we say hello to everyone
+    if timer.0.tick(time.delta()).just_finished() {
+        let mut rng = rand::thread_rng();
+        let random_height = rng.gen_range(144.0..256.0);
+
+        // Spawn top pipe with collider component
+        commands.spawn((
+            SpriteBundle {
+                transform: Transform::from_translation(Vec3::new(
+                    144.,
+                    random_height + PIPE_GAP_HEIGHT,
+                    0.,
+                )),
+                texture: asset_server.load("sprites/pipe-green.png"),
+                sprite: Sprite {
+                    flip_y: true,
+                    ..default()
+                },
+                ..default()
+            },
+            Collider,
+            Pipe,
+        ));
+
+        // Spawn bottom pipe with collider component
+        commands.spawn((
+            SpriteBundle {
+                transform: Transform::from_translation(Vec3::new(144., random_height - 320., 0.)),
+                texture: asset_server.load("sprites/pipe-green.png"),
+                ..default()
+            },
+            Collider,
+            Pipe,
+        ));
+    }
 }
 
-fn scroll_colliders(
-    mut colliders_query: Query<&mut Transform, With<Collider>>,
-    time: Res<Time>,
-    commands: Commands,
-) {
-    // todo: make timer system
+fn scroll_floor(mut floor_query: Query<&mut Transform, With<Floor>>, time: Res<Time>) {
     // Scroll floor to the left
-    for mut transform in colliders_query.iter_mut() {
-        transform.translation.x -= 100. * time.delta_seconds();
+    for mut transform in floor_query.iter_mut() {
+        transform.translation.x -= SCROLL_SPEED * time.delta_seconds();
         if transform.translation.x < -144. {
             transform.translation.x = 144.;
         }
     }
 }
+
+#[derive(Resource)]
+struct FlapTimer(Timer);
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Spawn camera
