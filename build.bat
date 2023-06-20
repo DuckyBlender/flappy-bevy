@@ -20,7 +20,7 @@ xcopy /E /I /Y %ASSETS_DIR% %BUILD_DIR%\%ASSETS_DIR%
 copy /Y target\release\%PROJECT_NAME%.exe %BUILD_DIR%
 
 @REM Compress the build directory into a zip file in the main directory
-powershell Compress-Archive -Path %BUILD_DIR%\* -DestinationPath %PROJECT_NAME%.zip
+powershell Compress-Archive -Path %BUILD_DIR%\* -DestinationPath %PROJECT_NAME%.zip -Force
 popd
 
 rmdir /S /Q %BUILD_DIR%

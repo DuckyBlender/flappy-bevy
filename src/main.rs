@@ -12,7 +12,7 @@ const BG_SCROLL_SPEED: f32 = 20.;
 const PIPE_SPAWN_INTERVAL: f32 = 2.;
 const PIPE_GAP_HEIGHT: f32 = 125.;
 
-const SCALE: f32 = 3.0;
+const SCALE: f32 = 1.0;
 
 #[derive(States, Debug, Clone, Eq, PartialEq, Hash, Default)]
 enum GameState {
@@ -456,7 +456,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         Background,
     ));
 
-    // Spawn scale amount of ground sprites + 1 with collider component
+    // Spawn scale amount of ground sprites + 1 to make scaling work
     for i in 0..=SCALE as usize {
         commands.spawn((
             SpriteBundle {
@@ -473,16 +473,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         ));
     }
 
-    // commands.spawn((
-    //     SpriteBundle {
-    //         transform: Transform::from_translation(Vec3::new(144. * SCALE, 0., 0.))
-    //             .with_scale(Vec3::splat(SCALE)),
-    //         texture: asset_server.load("sprites/background-day.png"),
-    //         ..default()
-    //     },
-    //     Background,
-    // ));
-    // Spawn scale amount of background + 1 with background component
+    // Spawn scale amount of background + 1 to make scaling work
     for i in 0..=SCALE as usize {
         commands.spawn((
             SpriteBundle {
